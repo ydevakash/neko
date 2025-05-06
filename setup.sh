@@ -26,20 +26,39 @@ sudo ldconfig
 
 echo "Asterisk installed with chan_mobile."
 
+
 echo "Restarting bluetooth service..."
 sudo systemctl restart bluetooth
 sudo rfkill unblock bluetooth
 
-echo "Scanning for Bluetooth devices nearby..."
-sudo bluetoothctl --timeout 10 scan on > /dev/null &
-sleep 10
-DEVICES=$(bluetoothctl devices | grep -v "Controller")
+# Loop until devices found or user quits
+while true; do
+  echo "Scanning for Bluetooth devices nearby..."
+  sudo bluetoothctl --timeout 10 scan on > /dev/null &
+  sleep 10
+  DEVICES=$(bluetoothctl devices | grep -v "Controller")
 
-if [ -z "$DEVICES" ]; then
-  echo "No Bluetooth devices found. Please ensure your phone's Bluetooth is ON and discoverable."
-  exit 1
-fi
+  if [ -z "$DEVICES" ]; then
+    echo
+    echo "No Bluetooth devices found. Please ensure your phone's Bluetooth is ON and discoverable."
+    read -n1 -p "Press 'r' to retry scanning or any other key to exit: " key
+    echo
+    if [[ "$key" == "r" || "$key" == "R" ]]; then
+      echo "Retrying scan..."
+      sleep 1
+      continue
+    else
+      echo "Exiting."
+      exit 1
+    fi
+  else
+    break
+  fi
+done
 
+echo
+echo "Found devices:"
+echo "$DEVICES" | nl
 echo ""
 echo "Found devices:"
 echo "$DEVICES" | nl
@@ -80,14 +99,50 @@ exten => _X.,1,Dial(Mobile/mobile1/\${EXTEN},60)
  same => n,Hangup()
 EOF
 
+echo
+read -p "Enter new AMI manager username: " AMI_NEW_USER
+read -s -p "Enter secret for '$AMI_NEW_USER': " AMI_NEW_SECRET
+echo
+echo "Configuring AMI manager user '$AMI_NEW_USER'..."
+
+if ! grep -q "^\[$AMI_NEW_USER\]" /etc/asterisk/manager.conf; then
+  sudo tee -a /etc/asterisk/manager.conf > /dev/null <<EOF
+
+[$AMI_NEW_USER]
+secret = $AMI_NEW_SECRET
+deny=0.0.0.0/0.0.0.0
+permit=127.0.0.1/255.255.255.0
+read = call,log,verbose,command,agent,system
+write = call,agent,system
+EOF
+  echo "Added AMI user '$AMI_NEW_USER' to /etc/asterisk/manager.conf"
+else
+  echo "AMI user '$AMI_NEW_USER' already exists, skipping."
+fi
+
+echo "Reloading Asterisk AMI manager and dialplan..."
+sudo asterisk -rx "manager reload" || echo "Warning: Failed to reload AMI manager"
+sudo asterisk -rx "dialplan reload" || echo "Warning: Failed to reload dialplan"
+
 echo "All done!"
 
-echo "Want to try it now? follow:"
-echo "1. Start Asterisk: sudo asterisk -rvvv"
-echo "2. Type: 'mobile search' and 'mobile show devices'"
-echo "3. Use: 'originate Mobile/mobile1/PHONE_NUMBER application Playback hello-world'"
-echo "4. To trigger an outbound call from dialplan with: exten => _X.,1,Dial(...)"
+cat <<EOM
 
-echo "Your phone ($PHONE_NAME) can now be used to place GSM calls through Asterisk!"
+To verify:
 
-echo "Happy hacking! by Annomroot."
+  sudo asterisk -rvvv
+  > manager show users       # should list '$AMI_NEW_USER'
+  > mobile search
+  > mobile show devices
+
+To originate a call via AMI:
+
+  - Connect via AMI with:
+      Username: $AMI_NEW_USER
+      Secret:   $AMI_NEW_SECRET
+  - From Asterisk CLI:
+      originate Mobile/mobile1/PHONE_NUMBER application Playback hello-world
+
+Happy hacking! by neko.
+
+EOM
