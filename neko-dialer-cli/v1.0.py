@@ -20,7 +20,7 @@ log = logging.getLogger("dialer")
 class CallSession:
     def __init__(self, number: str, csv_writer: csv.DictWriter):
         self.number = number
-        self.action_id = f"CLI-{int(time.time())}"
+        self.action_id = f"NEKO-CLI-{int(time.time())}"
         self.linkedid: Optional[str] = None
         self.start_ts: Optional[float] = None
         self.csv_writer = csv_writer
@@ -159,14 +159,13 @@ async def run_calls(numbers: List[str], csv_path: pathlib.Path) -> None:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Dial numbers via AMI and record results.")
+    parser = argparse.ArgumentParser(description="Neko campaign sequential dialer via AMI and generate report.")
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument('-n', '--number', action='append', dest='numbers')
-    group.add_argument('-f', '--file', dest='file')
-    parser.add_argument('--debug', action="store_true")
-    parser.add_argument('--log-level', default='INFO')
-    parser.add_argument('-o', '--out', dest='csv', type=pathlib.Path,
-                        default=pathlib.Path(f"./campaign_report_{datetime.now():%Y%m%d_%H%M%S}.csv"))
+    group.add_argument('-n', '--number', action='append', dest='numbers', help='pass numbers in-line')
+    group.add_argument('-f', '--file', dest='file', help='take numbers from file')
+    parser.add_argument('--debug', action="store_true", help='log everything for debugging')
+    parser.add_argument('--log-level', default='INFO', help='logging level (default: INFO)')
+    parser.add_argument('-o', '--out', dest='csv', type=pathlib.Path, default=pathlib.Path(f"./campaign_report_{datetime.now():%Y%m%d_%H%M%S}.csv"))
     args = parser.parse_args()
 
     setup_logging(args.log_level, args.debug)
